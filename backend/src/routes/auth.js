@@ -1,58 +1,56 @@
+import crypto from 'crypto';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { env } from '../config/env.js';
 
 const router = express.Router();
 
-router.post('/login', (req, res) => {
-  const { email, password } = req.body || {};
+// Slow down password guessing: 10 attempts per 15 minutes per IP.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many login attempts. Try again in 15 minutes.' },
+});
+
+/** Constant-time comparison so response timing doesn't leak how much of the value matched. */
+function safeEqual(a, b) {
+  const left = crypto.createHash('sha256').update(String(a)).digest();
+  const right = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(left, right);
+}
+
+router.post('/login', loginLimiter, (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required.' });
   }
 
-  const token = jwt.sign({ email, role: 'admin' }, env.JWT_SECRET, { expiresIn: '8h' });
-
-  return res.json({
-    token,
-    user: { email, role: 'admin' },
-  });
-});
-
-router.post('/register', (req, res) => {
-  const { email, password } = req.body || {};
-
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required.' });
+  if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD || !env.JWT_SECRET) {
+    return res.status(500).json({ message: 'Admin login is not configured on the server.' });
   }
 
-  const token = jwt.sign({ email, role: 'admin' }, env.JWT_SECRET, { expiresIn: '8h' });
-
-  return res.json({
-    token,
-    user: { email, role: 'admin' },
-  });
-});
-
-router.get('/gmail/connect', (_req, res) => {
-  res.json({
-    message: 'Register a Gmail OAuth client and redirect the user to Google authorization.',
-    redirectUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-  });
-});
-
-router.get('/gmail/callback', (req, res) => {
-  const { code } = req.query;
-
-  if (!code) {
-    return res.status(400).json({ message: 'Missing Google OAuth code.' });
+  const emailOk = safeEqual(email, env.ADMIN_EMAIL);
+  const passwordOk = safeEqual(password, env.ADMIN_PASSWORD);
+  if (!emailOk || !passwordOk) {
+    return res.status(401).json({ message: 'Invalid email or password.' });
   }
 
-  return res.json({ message: 'Gmail OAuth callback received successfully.', code });
+  const token = jwt.sign({ email, role: 'admin' }, env.JWT_SECRET, { expiresIn: '12h' });
+  return res.json({ token, user: { email, role: 'admin' } });
+});
+
+// Single-admin app: self-registration is disabled.
+router.post('/register', (_req, res) => {
+  res.status(403).json({ message: 'Registration is disabled.' });
 });
 
 router.get('/gmail/status', (_req, res) => {
-  res.json({ connected: false, message: 'Configure OAuth credentials to enable Gmail tracking.' });
+  res.json({ connected: false, message: 'Gmail reply tracking is not set up yet.' });
 });
 
 export default router;

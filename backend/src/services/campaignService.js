@@ -3,9 +3,9 @@ import { Contact } from '../models/Contact.js';
 import { EmailLog } from '../models/EmailLog.js';
 import { Resume } from '../models/Resume.js';
 import { env } from '../config/env.js';
-import { buildJobApplicationEmail } from '../utils/emailTemplate.js';
 import { buildResumeAttachments } from '../utils/emailAttachments.js';
-import { sendMail } from './emailService.js';
+import { localDayInfo } from '../utils/campaignRules.js';
+import { sendMail, textToHtml } from './emailService.js';
 
 function notFound(message) {
   const error = new Error(message);
@@ -69,6 +69,9 @@ export async function createCampaign(payload) {
 }
 
 export async function getDashboardOverview() {
+  const { startOfDay } = localDayInfo(new Date(), env.DEFAULT_TIMEZONE);
+  const sentToday = await EmailLog.countDocuments({ status: 'sent', sentAt: { $gte: startOfDay } });
+
   const [totalContacts, queuedJobs, sentEmails, failedEmails, replies] = await Promise.all([
     Contact.countDocuments(),
     EmailLog.countDocuments({ status: 'queued' }),
@@ -83,32 +86,32 @@ export async function getDashboardOverview() {
     sentEmails: sentEmails,
     failures: failedEmails,
     replies,
+    sentToday,
+    dailySendLimit: env.GLOBAL_DAILY_SEND_LIMIT,
   };
 }
 
 export async function sendCampaignTestEmail(campaignId, targetEmail) {
-  const campaign = await Campaign.findById(campaignId);
+  const campaign = await Campaign.findById(campaignId).lean();
   if (!campaign) throw notFound('Campaign not found');
 
-  const resume = campaign.resumeId ? await Resume.findById(campaign.resumeId).lean() : null;
+  const resume = campaign.resumeId ? await Resume.findById(campaign.resumeId).select('+data').lean() : null;
   const attachments = buildResumeAttachments(resume);
-
-  const result = buildJobApplicationEmail({
-    name: 'Test Recipient',
-    company: 'Hiring Team',
-    jobTitle: 'Node.js Developer',
-    subject: campaign.subject,
-  });
+  // Send to the given address, or to your own Gmail when none is given.
+  const to = targetEmail || env.SMTP_USER;
+  if (!to) throw Object.assign(new Error('No test recipient: set SMTP_USER or pass an email.'), { statusCode: 400 });
 
   await sendMail({
-    to: targetEmail,
-    subject: campaign.subject,
-    text: campaign.body || result.body,
-    html: `<pre>${(campaign.body || result.body).replace(/\n/g, '<br/>')}</pre>`,
+    to,
+    subject: `[TEST] ${campaign.subject}`,
+    text: campaign.body,
+    html: textToHtml(campaign.body),
     attachments,
   });
 
-  return { message: 'Test email sent successfully.' };
+  return {
+    message: `Test email sent to ${to}.${resume && attachments.length === 0 ? ' Warning: the resume file is missing - re-upload it.' : ''}`,
+  };
 }
 
 export async function startCampaign(campaignId) {

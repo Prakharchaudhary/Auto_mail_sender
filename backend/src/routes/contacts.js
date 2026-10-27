@@ -1,11 +1,10 @@
 import express from 'express';
-import fs from 'fs';
 import mongoose from 'mongoose';
 import { Contact } from '../models/Contact.js';
-import { upload } from '../middleware/upload.js';
+import { contactUpload } from '../middleware/upload.js';
 import { logger } from '../config/logger.js';
 import { parseManualEmailList, normalizeContactRow, validateContactRow } from '../utils/validators.js';
-import { parseUploadFile } from '../utils/fileParser.js';
+import { parseUploadBuffer } from '../utils/fileParser.js';
 import { getContactsForExport, getContactUsagePage } from '../services/contactService.js';
 import { formatExcelDate, sendWorkbook } from '../utils/excelExport.js';
 import { env } from '../config/env.js';
@@ -49,13 +48,13 @@ async function upsertContacts(rows, source) {
   return { stored, existingCount: existingEmails.size };
 }
 
-router.post('/upload', upload.single('file'), async (req, res, next) => {
+router.post('/upload', contactUpload.single('file'), async (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({ message: 'A contact file is required.' });
   }
 
   try {
-    const rows = await parseUploadFile(req.file.path);
+    const rows = parseUploadBuffer(req.file.buffer, req.file.originalname);
     const validRows = [];
     const invalidRows = [];
     const inFileDuplicates = [];
@@ -103,9 +102,6 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     });
   } catch (error) {
     return next(error);
-  } finally {
-    // The parsed contact sheet is no longer needed; don't keep personal data on disk.
-    fs.promises.unlink(req.file.path).catch(() => {});
   }
 });
 

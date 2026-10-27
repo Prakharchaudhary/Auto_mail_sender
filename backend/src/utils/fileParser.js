@@ -1,28 +1,22 @@
-import fs from 'fs';
 import path from 'path';
 import xlsx from 'xlsx';
 
-export async function parseUploadFile(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    throw new Error('File not found during parsing.');
+/** Parse an uploaded CSV/XLSX/XLS buffer into normalized contact rows. */
+export function parseUploadBuffer(buffer, originalName) {
+  if (!buffer || !buffer.length) {
+    throw Object.assign(new Error('The uploaded file is empty.'), { statusCode: 400 });
   }
 
-  const ext = path.extname(filePath).toLowerCase();
-  let rows = [];
-
-  if (ext === '.csv') {
-    const workbook = xlsx.readFile(filePath, { type: 'array' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
-  } else if (['.xlsx', '.xls'].includes(ext)) {
-    const workbook = xlsx.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
-  } else {
-    throw new Error('Unsupported file type for parsing.');
+  const ext = path.extname(String(originalName || '')).toLowerCase();
+  if (!['.csv', '.xlsx', '.xls'].includes(ext)) {
+    throw Object.assign(new Error('Unsupported file type for parsing.'), { statusCode: 400 });
   }
+
+  const workbook = ext === '.csv'
+    ? xlsx.read(buffer.toString('utf8'), { type: 'string' })
+    : xlsx.read(buffer, { type: 'buffer' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = sheet ? xlsx.utils.sheet_to_json(sheet, { defval: '' }) : [];
 
   return rows.map((row) => ({
     name: String(row.name || row.Name || '').trim(),

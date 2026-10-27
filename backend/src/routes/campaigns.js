@@ -4,7 +4,7 @@ import { Campaign } from '../models/Campaign.js';
 import { Contact } from '../models/Contact.js';
 import { MAX_CAMPAIGN_CONTACTS } from '../constants/email.js';
 import { EmailLog } from '../models/EmailLog.js';
-import { validateCampaignInput, validateTestEmail } from '../utils/validators.js';
+import { validateCampaignInput } from '../utils/validators.js';
 import {
   createCampaign,
   exportCampaignResults,
@@ -152,13 +152,12 @@ router.delete('/:id', async (req, res, next) => {
 
 router.post('/:id/test-email', async (req, res, next) => {
   try {
-    const { email, subject, body } = req.body || {};
-    const parsed = validateTestEmail({ email, subject: subject || 'Test email', body: body || 'This is a test email body.' });
-    if (!parsed.success) {
-      return res.status(400).json({ message: parsed.error.issues.map((issue) => issue.message) });
+    const email = String(req.body?.email || '').trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ message: 'Invalid test email address.' });
     }
 
-    const response = await sendCampaignTestEmail(req.params.id, parsed.data.email);
+    const response = await sendCampaignTestEmail(req.params.id, email || null);
     return res.json(response);
   } catch (error) {
     return next(error);

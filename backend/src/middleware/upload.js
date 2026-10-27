@@ -1,31 +1,29 @@
-import fs from 'fs';
-import path from 'path';
 import multer from 'multer';
 import { env } from '../config/env.js';
 
-const uploadDir = path.resolve(process.cwd(), env.UPLOAD_DIR || 'uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
+const SPREADSHEET_EXTENSIONS = ['.csv', '.xlsx', '.xls'];
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const safeName = file.originalname.replace(/\s+/g, '-');
-    const timestamp = Date.now();
-    cb(null, `${timestamp}-${safeName}`);
+const hasExtension = (name, extensions) => extensions.some((ext) => String(name || '').toLowerCase().endsWith(ext));
+
+// Files are kept in memory (never written to disk): Vercel functions have no persistent
+// filesystem. Contact sheets are parsed straight from the buffer; resume PDFs are stored
+// in MongoDB.
+const storage = multer.memoryStorage();
+
+export const contactUpload = multer({
+  storage,
+  limits: { fileSize: env.MAX_FILE_SIZE, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (hasExtension(file.originalname, SPREADSHEET_EXTENSIONS)) return cb(null, true);
+    return cb(Object.assign(new Error('Unsupported file type. Upload a CSV, XLSX, or XLS file.'), { statusCode: 400 }));
   },
 });
 
-export const upload = multer({
+export const resumeUpload = multer({
   storage,
-  limits: {
-    fileSize: env.MAX_FILE_SIZE,
-  },
+  limits: { fileSize: env.MAX_FILE_SIZE, files: 1 },
   fileFilter: (_req, file, cb) => {
-    const allowedTypes = ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/pdf'];
-    if (allowedTypes.includes(file.mimetype) || file.originalname.toLowerCase().endsWith('.csv') || file.originalname.toLowerCase().endsWith('.xlsx') || file.originalname.toLowerCase().endsWith('.xls') || file.originalname.toLowerCase().endsWith('.pdf')) {
-      cb(null, true);
-      return;
-    }
-    cb(new Error('Unsupported file type. Please upload CSV, Excel, or PDF files only.'));
+    if (file.mimetype === 'application/pdf' || hasExtension(file.originalname, ['.pdf'])) return cb(null, true);
+    return cb(Object.assign(new Error('Only PDF resumes are allowed.'), { statusCode: 400 }));
   },
 });

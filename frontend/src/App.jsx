@@ -3,7 +3,8 @@ import CampaignDetailPage from './pages/CampaignDetailPage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
 import { MAX_CAMPAIGN_CONTACTS } from './utils/format.js';
 
-const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;
+const MAX_UPLOAD_SIZE = 4 * 1024 * 1024; // Vercel request limit is 4.5 MB
+const DAILY_SEND_LIMIT = 30;
 
 const defaultEmailBody = `Hello,
 
@@ -132,7 +133,7 @@ const formatFileSize = (value) => {
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(localStorage.getItem('token')));
   const [token, setToken] = useState(localStorage.getItem('token') || '');
-  const [loginForm, setLoginForm] = useState({ email: 'admin@example.com', password: 'admin123' });
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [overview, setOverview] = useState(defaultOverview);
@@ -163,7 +164,7 @@ function App() {
   const [campaignName, setCampaignName] = useState('Node.js Backend Applications');
   const [subject, setSubject] = useState('Application for Backend Developer Role');
   const [body, setBody] = useState(defaultJobTemplates[0].body);
-  const [dailyLimit, setDailyLimit] = useState(10);
+  const [dailyLimit, setDailyLimit] = useState(DAILY_SEND_LIMIT);
   const [batchSize, setBatchSize] = useState(10);
   const [delayMs, setDelayMs] = useState(60000);
   const [startDateTime, setStartDateTime] = useState(() => {
@@ -182,7 +183,7 @@ function App() {
     return localDate.toISOString().slice(0, 16);
   });
   const [campaignAdjustments, setCampaignAdjustments] = useState({
-    dailyLimit: 10,
+    dailyLimit: DAILY_SEND_LIMIT,
     batchSize: 10,
     delayMs: 60000,
   });
@@ -286,7 +287,7 @@ function App() {
     setCampaignName(`${defaultTemplate.role} Applications`);
     setSubject(defaultTemplate.subject);
     setBody(defaultTemplate.body);
-    setDailyLimit(10);
+    setDailyLimit(DAILY_SEND_LIMIT);
     setBatchSize(10);
     setDelayMs(60000);
     setStartDateTime(() => {
@@ -301,7 +302,7 @@ function App() {
       const localDate = new Date(now.getTime() - offset * 60000);
       return localDate.toISOString().slice(0, 16);
     });
-    setCampaignAdjustments({ dailyLimit: 10, batchSize: 10, delayMs: 60000 });
+    setCampaignAdjustments({ dailyLimit: DAILY_SEND_LIMIT, batchSize: 10, delayMs: 60000 });
   };
 
   const applyTemplate = (template) => {
@@ -887,11 +888,8 @@ function App() {
       const response = await requestWithAuth(`/api/campaigns/${selectedCampaignId}/test-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: 'work.prakhar9805@gmail.com',
-          subject,
-          body,
-        }),
+        // No email given: the server sends the test to your own Gmail (SMTP_USER).
+        body: JSON.stringify({}),
       });
 
       const data = await response.json();
@@ -1075,6 +1073,10 @@ function App() {
             <div className="stat-card">
               <span>Replies</span>
               <strong>{overview.replies}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Sent today</span>
+              <strong>{overview.sentToday ?? 0} / {overview.dailySendLimit ?? DAILY_SEND_LIMIT}</strong>
             </div>
           </section>
 
@@ -1818,7 +1820,7 @@ function App() {
             <div className="schedule-grid">
               <label>
                 <span>Daily limit</span>
-                <input type="number" min="1" max="200" value={dailyLimit} onChange={(event) => setDailyLimit(Number(event.target.value) || 10)} />
+                <input type="number" min="1" max={DAILY_SEND_LIMIT} value={dailyLimit} onChange={(event) => setDailyLimit(Math.min(Number(event.target.value) || DAILY_SEND_LIMIT, DAILY_SEND_LIMIT))} />
               </label>
               <label>
                 <span>Batch size</span>
@@ -1842,8 +1844,9 @@ function App() {
             <div className="daily-batch-note" aria-live="polite">
               <strong>Daily sending rule</strong>
               <p>
-                This campaign sends up to <strong>{dailyLimit}</strong> emails per day in batches of <strong>{batchSize}</strong> while the scheduled time is due.
-                If you want to restrict sending to specific days, that can be configured in the campaign rules.
+                Emails go out once each weekday morning (around 9:30–10:30 AM IST). At most <strong>{DAILY_SEND_LIMIT}</strong> emails
+                are sent per day across <strong>all</strong> campaigns; this campaign can use up to <strong>{dailyLimit}</strong> of them.
+                Remember to click <strong>Start</strong> on the campaign, or nothing will be sent.
               </p>
             </div>
           </div>
@@ -2018,7 +2021,7 @@ function App() {
                 type="email"
                 value={loginForm.email}
                 onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))}
-                placeholder="admin@example.com"
+                placeholder="you@example.com"
                 aria-invalid={Boolean(loginError)}
               />
             </label>
@@ -2029,7 +2032,7 @@ function App() {
                 type="password"
                 value={loginForm.password}
                 onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
-                placeholder="admin123"
+                placeholder="Your password"
                 aria-invalid={Boolean(loginError)}
               />
             </label>

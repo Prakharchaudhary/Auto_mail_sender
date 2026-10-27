@@ -1,22 +1,33 @@
-import { createApp } from './app.js';
+// Local development / self-hosted entry point. On Vercel, src/app.js is used instead
+// and sending is triggered by the Vercel Cron Job (see vercel.json).
+import app from './app.js';
 import { connectDB } from './config/db.js';
-import { env } from './config/env.js';
+import { assertRequiredEnv, env } from './config/env.js';
 import { logger } from './config/logger.js';
-import { startScheduler } from './services/schedulerService.js';
+import { startScheduler, stopScheduler } from './services/schedulerService.js';
 
 async function bootstrap() {
   try {
+    assertRequiredEnv();
     await connectDB();
-    const app = createApp();
     const server = app.listen(env.PORT, () => {
       logger.info(`Server started on http://localhost:${env.PORT}`);
     });
 
-    startScheduler();
+    if (process.env.DISABLE_LOCAL_SCHEDULER === 'true' || env.IS_VERCEL) {
+      logger.info('Local scheduler disabled (emails are sent by the daily cron).');
+    } else {
+      startScheduler();
+    }
 
     const shutdown = async () => {
       logger.info('Received shutdown signal. Closing server.');
-      server.close(() => process.exit(0));
+      stopScheduler();
+      server.close(async () => {
+        const mongoose = (await import('mongoose')).default;
+        await mongoose.disconnect().catch(() => {});
+        process.exit(0);
+      });
     };
 
     process.on('SIGINT', shutdown);
