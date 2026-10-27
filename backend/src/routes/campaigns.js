@@ -100,6 +100,11 @@ router.patch('/:id', async (req, res, next) => {
       campaign.startDateTime = new Date(req.body.startDateTime);
     }
 
+    // Priority can be changed at any time, even while the campaign is sending.
+    if ('sendFirst' in req.body) {
+      campaign.sendFirst = Boolean(req.body.sendFirst);
+    }
+
     // Recipients and resume can only change before sending starts.
     const editable = campaign.status === 'draft';
     if (Array.isArray(req.body.contactIds) && editable) {

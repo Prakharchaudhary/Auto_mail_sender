@@ -148,6 +148,7 @@ function App() {
   const [contactUploadSummary, setContactUploadSummary] = useState(null);
   const [uploadingContacts, setUploadingContacts] = useState(false);
   const [recipientMode, setRecipientMode] = useState('upload');
+  const [sendFirst, setSendFirst] = useState(false);
   const [manualEmailsInput, setManualEmailsInput] = useState('');
   const [manualEmailSummary, setManualEmailSummary] = useState(null);
   const [manualEmailsLoading, setManualEmailsLoading] = useState(false);
@@ -290,6 +291,7 @@ function App() {
     setDailyLimit(DAILY_SEND_LIMIT);
     setBatchSize(10);
     setDelayMs(60000);
+    setSendFirst(false);
     setStartDateTime(() => {
       const now = new Date(Date.now() + 60 * 1000);
       const offset = new Date().getTimezoneOffset();
@@ -530,6 +532,7 @@ function App() {
     setDailyLimit(Number(selectedCampaign.dailyLimit || 10));
     setBatchSize(Number(selectedCampaign.batchSize || 10));
     setDelayMs(Number(selectedCampaign.delayMs || 60000));
+    setSendFirst(Boolean(selectedCampaign.sendFirst));
     setCampaignAdjustments({
       dailyLimit: Number(selectedCampaign.dailyLimit || 10),
       batchSize: Number(selectedCampaign.batchSize || 10),
@@ -614,6 +617,7 @@ function App() {
         contactIds: recipientContacts.map((contact) => contact._id || contact.id),
         resumeId: uploadedResumeId || undefined,
         approvalRequired: true,
+        sendFirst,
       };
 
       const url = selectedCampaignId ? `/api/campaigns/${selectedCampaignId}` : '/api/campaigns';
@@ -1233,7 +1237,10 @@ function App() {
                       <tr key={campaign._id} className={selectedCampaignId === campaign._id ? 'campaign-row active' : 'campaign-row'}>
                         <td>
                           <div className="campaign-name-stack">
-                            <strong>{campaign.name || 'Untitled campaign'}</strong>
+                            <strong>
+                              {campaign.name || 'Untitled campaign'}
+                              {campaign.sendFirst ? <span className="send-first-badge">Send first</span> : null}
+                            </strong>
                             <span>{campaign.subject || 'No subject'}</span>
                           </div>
                         </td>
@@ -1605,6 +1612,7 @@ function App() {
                 onClick={() => {
                   resetCurrentRecipientList();
                   setRecipientMode('upload');
+                  setSendFirst(false);
                 }}
               >
                 Upload file
@@ -1615,6 +1623,8 @@ function App() {
                 onClick={() => {
                   resetCurrentRecipientList();
                   setRecipientMode('manual');
+                  // Pasted emails are usually urgent: send them before the big lists.
+                  setSendFirst(true);
                 }}
               >
                 Paste emails
@@ -1840,6 +1850,14 @@ function App() {
               <span>Daily limits and batch sizes stay aligned with the current campaign rules.</span>
               <span>{scheduledTime}</span>
             </div>
+
+            <label className="checkbox-row send-first-row">
+              <input type="checkbox" checked={sendFirst} onChange={(event) => setSendFirst(event.target.checked)} />
+              <span>
+                <strong>Send first</strong> — send this campaign before other running campaigns.
+                The rest of the day's {DAILY_SEND_LIMIT} emails go to the other campaigns. (Turned on automatically for pasted emails.)
+              </span>
+            </label>
 
             <div className="daily-batch-note" aria-live="polite">
               <strong>Daily sending rule</strong>

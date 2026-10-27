@@ -25,6 +25,7 @@ export const campaignInputSchema = z.object({
   batchSize: z.number().int().min(1).max(50).optional(),
   delayMs: z.number().int().min(1000).max(600000).optional(),
   approvalRequired: z.boolean().optional().default(true),
+  sendFirst: z.boolean().optional().default(false),
 });
 
 export const testEmailSchema = z.object({

@@ -127,6 +127,7 @@ function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onD
             <div className="detail-title-row">
               <h2>{campaign.name}</h2>
               <span className={`campaign-status-pill status-pill--${status}`}>{status}</span>
+              {campaign.sendFirst && <span className="send-first-badge">Send first</span>}
             </div>
             <p className="page-subtitle">{campaign.subject}</p>
           </div>
@@ -185,6 +186,7 @@ function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onD
             <div><dt>Delay</dt><dd>{formatDuration(campaign.delayMs)}</dd></div>
             <div><dt>Timezone</dt><dd>{campaign.timezone || '—'}</dd></div>
             <div><dt>Resume</dt><dd>{campaign.resume?.originalName || 'Not attached'}</dd></div>
+            <div><dt>Priority</dt><dd>{campaign.sendFirst ? 'Send first' : 'Normal'}</dd></div>
           </dl>
         </section>
 

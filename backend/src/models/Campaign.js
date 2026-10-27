@@ -28,6 +28,8 @@ const campaignSchema = new mongoose.Schema(
     issueMessages: [{ type: String }],
     isTestMode: { type: Boolean, default: false },
     approvalRequired: { type: Boolean, default: true },
+    // Send-first campaigns get the day's sending slots before normal campaigns.
+    sendFirst: { type: Boolean, default: false },
     scheduleLocked: { type: Boolean, default: false },
   },
   { timestamps: true },

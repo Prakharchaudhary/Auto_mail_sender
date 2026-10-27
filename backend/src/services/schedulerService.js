@@ -105,9 +105,11 @@ export async function processScheduledCampaigns(options = {}) {
       return summary;
     }
 
-    const campaigns = await Campaign.find({ status: { $in: ['queued', 'running'] } }, { contactIds: 0 })
-      .sort({ createdAt: 1 })
-      .lean();
+    // Send-first campaigns (e.g. pasted emails) use the day's slots before normal ones;
+    // within each group, older campaigns go first.
+    const campaigns = (await Campaign.find({ status: { $in: ['queued', 'running'] } }, { contactIds: 0 }).lean())
+      .sort((left, right) => (Number(Boolean(right.sendFirst)) - Number(Boolean(left.sendFirst)))
+        || (new Date(left.createdAt) - new Date(right.createdAt)));
 
     for (const campaign of campaigns) {
       if (globalRemaining <= 0 || summary.stoppedReason) break;
