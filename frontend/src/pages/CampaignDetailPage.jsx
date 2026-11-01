@@ -6,6 +6,11 @@ const PAGE_SIZE = 25;
 const STATUS_FILTERS = ['all', 'not_started', 'queued', 'retrying', 'sent', 'failed', 'skipped'];
 const LIVE_STATUSES = new Set(['queued', 'running']);
 
+/** "YYYY-MM-DD" of a timestamp in the given timezone. */
+const toLocalDay = (value, timeZone) => new Intl.DateTimeFormat('en-CA', {
+  timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date(value));
+
 function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onDelete }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -14,6 +19,8 @@ function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onD
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+  const [sentFrom, setSentFrom] = useState('');
+  const [sentTo, setSentTo] = useState('');
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -34,6 +41,8 @@ function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onD
     setPage(1);
     setSearch('');
     setStatusFilter('all');
+    setSentFrom('');
+    setSentTo('');
     load();
   }, [load]);
 
@@ -47,17 +56,27 @@ function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onD
     return () => clearInterval(timer);
   }, [status, load]);
 
+  const timeZone = campaign?.timezone || 'Asia/Kolkata';
+  const dateFilterActive = Boolean(sentFrom || sentTo);
+
   const filteredRecipients = useMemo(() => {
     const term = search.trim().toLowerCase();
     return (detail?.recipients || []).filter((recipient) => {
       if (statusFilter !== 'all' && recipient.status !== statusFilter) return false;
+      if (sentFrom || sentTo) {
+        // Compare the sent date in the campaign's timezone (YYYY-MM-DD sorts as text).
+        if (!recipient.sentAt) return false;
+        const day = toLocalDay(recipient.sentAt, timeZone);
+        if (sentFrom && day < sentFrom) return false;
+        if (sentTo && day > sentTo) return false;
+      }
       if (!term) return true;
       return [recipient.name, recipient.email, recipient.company, recipient.job_title]
         .join(' ')
         .toLowerCase()
         .includes(term);
     });
-  }, [detail, search, statusFilter]);
+  }, [detail, search, statusFilter, sentFrom, sentTo, timeZone]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRecipients.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -74,7 +93,11 @@ function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onD
     try {
       await downloadFile(
         request,
-        `/api/campaigns/${campaignId}/recipients/export?status=${statusFilter}`,
+        `/api/campaigns/${campaignId}/recipients/export?${new URLSearchParams({
+          status: statusFilter,
+          ...(sentFrom ? { from: sentFrom } : {}),
+          ...(sentTo ? { to: sentTo } : {}),
+        })}`,
         'campaign-recipients.xlsx',
       );
     } catch (exportError) {
@@ -115,6 +138,15 @@ function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onD
     failed: detail.failedCount,
     skipped: (detail.recipients || []).filter((recipient) => recipient.status === 'skipped').length,
   };
+
+  const exportCount = dateFilterActive
+    ? (detail.recipients || []).filter((recipient) => {
+      if (statusFilter !== 'all' && recipient.status !== statusFilter) return false;
+      if (!recipient.sentAt || recipient.contactDeleted) return false;
+      const day = toLocalDay(recipient.sentAt, timeZone);
+      return (!sentFrom || day >= sentFrom) && (!sentTo || day <= sentTo);
+    }).length
+    : statusCounts[statusFilter];
 
   return (
     <div className="detail-page">
@@ -213,12 +245,23 @@ function CampaignDetailPage({ campaignId, request, onBack, onEdit, onAction, onD
             type="button"
             className="secondary-btn small-btn export-btn"
             onClick={exportExcel}
-            disabled={exporting || statusCounts[statusFilter] === 0}
+            disabled={exporting || exportCount === 0}
           >
             {exporting
               ? 'Exporting…'
-              : `Export ${statusFilter === 'all' ? 'all' : emailStatusLabel(statusFilter).toLowerCase()} (${statusCounts[statusFilter]}) to Excel`}
+              : `Export ${statusFilter === 'all' ? 'all' : emailStatusLabel(statusFilter).toLowerCase()} (${exportCount}) to Excel`}
           </button>
+          <label className="date-filter">
+            <span>Sent from</span>
+            <input type="date" value={sentFrom} max={sentTo || undefined} onChange={(event) => { setSentFrom(event.target.value); setPage(1); }} />
+          </label>
+          <label className="date-filter">
+            <span>to</span>
+            <input type="date" value={sentTo} min={sentFrom || undefined} onChange={(event) => { setSentTo(event.target.value); setPage(1); }} />
+          </label>
+          {dateFilterActive && (
+            <button type="button" className="text-btn" onClick={() => { setSentFrom(''); setSentTo(''); setPage(1); }}>Clear dates</button>
+          )}
           <label className="campaign-search">
             <span className="sr-only">Search recipients</span>
             <input

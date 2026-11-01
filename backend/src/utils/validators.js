@@ -11,6 +11,7 @@ export const contactUploadSchema = z.object({
 
 export const campaignInputSchema = z.object({
   name: z.string().min(2).max(120),
+  role: z.string().trim().max(120).optional(),
   subject: z.string().min(3).max(200),
   body: z.string().min(20).max(5000),
   contactIds: z.array(z.string())

@@ -4,7 +4,7 @@ import { EmailLog } from '../models/EmailLog.js';
 import { Contact } from '../models/Contact.js';
 import { Resume } from '../models/Resume.js';
 import { buildResumeAttachments } from '../utils/emailAttachments.js';
-import { localDayInfo } from '../utils/campaignRules.js';
+import { isWithinSendWindow, localDayInfo } from '../utils/campaignRules.js';
 import { sendMail, textToHtml } from './emailService.js';
 import { logger } from '../config/logger.js';
 import { env } from '../config/env.js';
@@ -28,7 +28,7 @@ export function startScheduler() {
   task = cron.schedule('* * * * *', () => {
     processScheduledCampaigns({ mode: 'minute' }).catch((error) => logger.error({ err: error }, 'Scheduler run failed'));
   });
-  logger.info(`Email scheduler started (max ${env.GLOBAL_DAILY_SEND_LIMIT} emails/day across all campaigns).`);
+  logger.info(`Email scheduler started (max ${env.GLOBAL_DAILY_SEND_LIMIT} emails/day, sending ${env.SEND_WINDOW_START}-${env.SEND_WINDOW_END} ${env.DEFAULT_TIMEZONE}).`);
   return task;
 }
 
@@ -74,6 +74,12 @@ export async function processScheduledCampaigns(options = {}) {
 
   if (isProcessing) {
     return { skipped: true, reason: 'A sending run is already in progress.' };
+  }
+
+  // The every-minute scheduler would otherwise send the moment the daily limit resets at
+  // midnight IST. Hold everything until the sending window opens (09:30 by default).
+  if (mode === 'minute' && !isWithinSendWindow(now, env.DEFAULT_TIMEZONE, env.SEND_WINDOW_START, env.SEND_WINDOW_END)) {
+    return { skipped: true, reason: `Outside sending window (${env.SEND_WINDOW_START}-${env.SEND_WINDOW_END}).` };
   }
   isProcessing = true;
 

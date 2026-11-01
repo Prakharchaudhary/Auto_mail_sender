@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import CampaignDetailPage from './pages/CampaignDetailPage.jsx';
 import ContactsPage from './pages/ContactsPage.jsx';
 import { MAX_CAMPAIGN_CONTACTS } from './utils/format.js';
+import { downloadFile } from './utils/download.js';
 
 const MAX_UPLOAD_SIZE = 4 * 1024 * 1024; // Vercel request limit is 4.5 MB
 const DAILY_SEND_LIMIT = 30;
@@ -163,7 +164,11 @@ function App() {
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateDeleteTarget, setTemplateDeleteTarget] = useState(null);
   const [campaignName, setCampaignName] = useState('Node.js Backend Applications');
+  const [campaignRole, setCampaignRole] = useState(defaultJobTemplates[0].role);
   const [subject, setSubject] = useState('Application for Backend Developer Role');
+  const [sentExportFrom, setSentExportFrom] = useState('');
+  const [sentExportTo, setSentExportTo] = useState('');
+  const [sentExporting, setSentExporting] = useState(false);
   const [body, setBody] = useState(defaultJobTemplates[0].body);
   const [dailyLimit, setDailyLimit] = useState(DAILY_SEND_LIMIT);
   const [batchSize, setBatchSize] = useState(10);
@@ -286,6 +291,7 @@ function App() {
     const defaultTemplate = jobTemplates[0] || defaultJobTemplates[0];
     setSelectedTemplateId(defaultTemplate.id);
     setCampaignName(`${defaultTemplate.role} Applications`);
+    setCampaignRole(defaultTemplate.role || '');
     setSubject(defaultTemplate.subject);
     setBody(defaultTemplate.body);
     setDailyLimit(DAILY_SEND_LIMIT);
@@ -310,6 +316,7 @@ function App() {
   const applyTemplate = (template) => {
     setSelectedTemplateId(template.id);
     setCampaignName(`${template.role} Applications`);
+    setCampaignRole(template.role || '');
     setSubject(template.subject);
     setBody(template.body);
     setTemplatePickerOpen(false);
@@ -527,6 +534,7 @@ function App() {
     if (!selectedCampaign) return;
 
     setCampaignName(selectedCampaign.name || 'Node.js Backend Applications');
+    setCampaignRole(selectedCampaign.role || '');
     setSubject(selectedCampaign.subject || 'Application for Backend Developer Role');
     setBody(selectedCampaign.body || defaultEmailBody);
     setDailyLimit(Number(selectedCampaign.dailyLimit || 10));
@@ -608,6 +616,7 @@ function App() {
     try {
       const payload = {
         name: campaignName,
+        role: campaignRole.trim() || undefined,
         subject,
         body,
         dailyLimit,
@@ -1142,6 +1151,25 @@ function App() {
     </>
   );
 
+  // All sent emails across campaigns in the chosen date range, with the role applied for.
+  const exportSentEmails = async () => {
+    if (sentExportFrom && sentExportTo && sentExportFrom > sentExportTo) {
+      setStatusMessage('"From" date must be on or before "To" date.');
+      return;
+    }
+    setSentExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (sentExportFrom) params.set('from', sentExportFrom);
+      if (sentExportTo) params.set('to', sentExportTo);
+      await downloadFile(requestWithAuth, `/api/campaigns/sent-emails/export?${params}`, 'sent-emails.xlsx');
+    } catch (exportError) {
+      setStatusMessage(exportError.message);
+    } finally {
+      setSentExporting(false);
+    }
+  };
+
   const renderCampaignsPage = () => (
     <section className="panel full-panel">
       <div className="page-header compact-page-header">
@@ -1162,6 +1190,21 @@ function App() {
         <div className="summary-card"><span>Paused</span><strong>{campaignSummary.paused || 0}</strong></div>
         <div className="summary-card"><span>Cancelled</span><strong>{campaignSummary.cancelled || 0}</strong></div>
         <div className="summary-card"><span>Failed</span><strong>{campaignSummary.failed || 0}</strong></div>
+      </div>
+
+      <div className="campaign-toolbar date-export-bar">
+        <span className="date-export-title">Export sent emails</span>
+        <label className="date-filter">
+          <span>From</span>
+          <input type="date" value={sentExportFrom} max={sentExportTo || undefined} onChange={(event) => setSentExportFrom(event.target.value)} />
+        </label>
+        <label className="date-filter">
+          <span>To</span>
+          <input type="date" value={sentExportTo} min={sentExportFrom || undefined} onChange={(event) => setSentExportTo(event.target.value)} />
+        </label>
+        <button type="button" className="secondary-btn small-btn export-btn" onClick={exportSentEmails} disabled={sentExporting}>
+          {sentExporting ? 'Exporting…' : 'Export to Excel'}
+        </button>
       </div>
 
       <div className="campaign-toolbar">
@@ -1585,6 +1628,10 @@ function App() {
             </div>
 
             <div className="fields-grid single-column">
+              <label>
+                <span>Role applied for</span>
+                <input value={campaignRole} onChange={(event) => setCampaignRole(event.target.value)} placeholder="Backend Developer" />
+              </label>
               <label>
                 <span>Email subject</span>
                 <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Application for Backend Developer Role" />

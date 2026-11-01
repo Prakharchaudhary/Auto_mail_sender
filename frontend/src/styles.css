@@ -2395,3 +2395,29 @@ textarea {
   vertical-align: middle;
   white-space: nowrap;
 }
+
+/* Date range filters for exports */
+.date-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+}
+
+.date-filter input[type='date'] {
+  min-height: 44px;
+  width: auto;
+}
+
+.date-export-bar {
+  padding: 12px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.date-export-title {
+  font-weight: 600;
+  margin-right: auto;
+}

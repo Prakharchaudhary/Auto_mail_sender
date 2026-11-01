@@ -48,6 +48,11 @@ export const env = {
   // Hard cap on emails sent per day across ALL campaigns (protects the Gmail account).
   GLOBAL_DAILY_SEND_LIMIT: Number(process.env.GLOBAL_DAILY_SEND_LIMIT || 30),
 
+  // Local scheduler only sends inside this window (DEFAULT_TIMEZONE). Set both to the same
+  // value to disable. The Vercel daily cron already runs at 09:30 IST and ignores this.
+  SEND_WINDOW_START: process.env.SEND_WINDOW_START || '09:30',
+  SEND_WINDOW_END: process.env.SEND_WINDOW_END || '18:00',
+
   RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
   RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 300),
 };

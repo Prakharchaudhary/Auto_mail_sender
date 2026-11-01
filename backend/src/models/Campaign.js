@@ -9,6 +9,8 @@ const campaignSchema = new mongoose.Schema(
       default: 'draft',
       index: true,
     },
+    // Job role this campaign applies for (from the template), used in exports.
+    role: { type: String, trim: true, default: '' },
     subject: { type: String, required: true },
     body: { type: String, required: true },
     resumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume' },

@@ -51,6 +51,7 @@ export async function createCampaign(payload) {
 
   const campaign = await Campaign.create({
     name: payload.name,
+    role: payload.role || '',
     subject: payload.subject,
     body: payload.body,
     resumeId: payload.resumeId,
@@ -260,6 +261,7 @@ export async function getCampaignProgressDetail(campaignId) {
     campaign: {
       _id: campaign._id,
       name: campaign.name,
+      role: campaign.role || '',
       status: campaign.status,
       sendFirst: Boolean(campaign.sendFirst),
       subject: campaign.subject,

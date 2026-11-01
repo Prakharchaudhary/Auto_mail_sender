@@ -19,6 +19,8 @@ import {
 } from '../services/campaignService.js';
 
 import { formatExcelDate, sendWorkbook } from '../utils/excelExport.js';
+import { campaignAppliedRole, localDateRange } from '../utils/campaignRules.js';
+import { env } from '../config/env.js';
 
 const router = express.Router();
 
@@ -27,6 +29,65 @@ router.param('id', (_req, res, next, id) => {
     return res.status(400).json({ message: 'Invalid campaign id.' });
   }
   return next();
+});
+
+// Every email sent across all campaigns in a date range (dates in the app timezone),
+// with the job role each one applied for. Must stay above the '/:id/...' routes.
+router.get('/sent-emails/export', async (req, res, next) => {
+  try {
+    const tz = env.DEFAULT_TIMEZONE;
+    const { start, end } = localDateRange(req.query.from, req.query.to, tz);
+    const sentAt = {};
+    if (start) sentAt.$gte = start;
+    if (end) sentAt.$lt = end;
+
+    const logs = await EmailLog.find(
+      { status: 'sent', ...(start || end ? { sentAt } : { sentAt: { $ne: null } }) },
+      { campaignId: 1, contactId: 1, email: 1, sentAt: 1 },
+    ).sort({ sentAt: 1 }).lean();
+
+    const [campaigns, contacts] = await Promise.all([
+      Campaign.find({ _id: { $in: [...new Set(logs.map((log) => String(log.campaignId)))] } },
+        { name: 1, role: 1, subject: 1 }).lean(),
+      Contact.find({ _id: { $in: logs.map((log) => log.contactId) } },
+        { name: 1, company: 1, job_title: 1 }).lean(),
+    ]);
+    const campaignById = new Map(campaigns.map((campaign) => [String(campaign._id), campaign]));
+    const contactById = new Map(contacts.map((contact) => [String(contact._id), contact]));
+
+    const label = [req.query.from, req.query.to].filter(Boolean).join('-to-') || 'all-dates';
+    return await sendWorkbook(res, {
+      filename: `sent-emails-${label}.xlsx`,
+      sheets: [{
+        name: 'Sent emails',
+        columns: [
+          { header: `Sent At (${tz})`, key: 'sentAt', width: 22 },
+          { header: 'Email', key: 'email', width: 34 },
+          { header: 'Applied For', key: 'role', width: 26 },
+          { header: 'Company', key: 'company', width: 24 },
+          { header: 'Contact Name', key: 'name', width: 22 },
+          { header: 'Contact Title', key: 'title', width: 22 },
+          { header: 'Campaign', key: 'campaign', width: 30 },
+        ],
+        rows: logs.map((log) => {
+          const campaign = campaignById.get(String(log.campaignId)) || {};
+          const contact = contactById.get(String(log.contactId)) || {};
+          return {
+            sentAt: formatExcelDate(log.sentAt, tz),
+            email: log.email,
+            role: campaignAppliedRole(campaign),
+            company: contact.company || '',
+            name: contact.name || '',
+            title: contact.job_title || '',
+            campaign: campaign.name || '(deleted campaign)',
+          };
+        }),
+      }],
+    });
+  } catch (error) {
+    if (error.statusCode === 400) return res.status(400).json({ message: error.message });
+    return next(error);
+  }
 });
 
 router.post('/', async (req, res, next) => {
@@ -89,7 +150,7 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(404).json({ message: 'Campaign not found.' });
     }
 
-    const updatableFields = ['subject', 'body', 'timezone', 'dailyLimit', 'batchSize', 'delayMs', 'startDateTime', 'name'];
+    const updatableFields = ['role', 'subject', 'body', 'timezone', 'dailyLimit', 'batchSize', 'delayMs', 'startDateTime', 'name'];
     for (const field of updatableFields) {
       if (field in req.body) {
         campaign[field] = req.body[field];
@@ -222,18 +283,33 @@ router.get('/:id/recipients/export', async (req, res, next) => {
     }
 
     const tz = detail.campaign.timezone || undefined;
+    let range;
+    try {
+      range = localDateRange(req.query.from, req.query.to, tz || env.DEFAULT_TIMEZONE);
+    } catch (rangeError) {
+      return res.status(400).json({ message: rangeError.message });
+    }
+    const inRange = (recipient) => {
+      if (!range.start && !range.end) return true;
+      if (!recipient.sentAt) return false;
+      const sent = new Date(recipient.sentAt);
+      return (!range.start || sent >= range.start) && (!range.end || sent < range.end);
+    };
+    const appliedFor = campaignAppliedRole(detail.campaign);
     const recipients = detail.recipients
       .filter((recipient) => status === 'all' || recipient.status === status)
-      .filter((recipient) => !recipient.contactDeleted);
+      .filter((recipient) => !recipient.contactDeleted)
+      .filter(inRange);
 
     const slug = detail.campaign.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'campaign';
     return await sendWorkbook(res, {
-      filename: `${slug}-${status === 'all' ? 'recipients' : status.replace('_', '-')}.xlsx`,
+      filename: `${slug}-${status === 'all' ? 'recipients' : status.replace('_', '-')}${req.query.from || req.query.to ? `-${[req.query.from, req.query.to].filter(Boolean).join('-to-')}` : ''}.xlsx`,
       sheets: [{
         name: 'Recipients',
         columns: [
           { header: 'Name', key: 'name', width: 24 },
           { header: 'Email', key: 'email', width: 34 },
+          { header: 'Applied For', key: 'appliedFor', width: 26 },
           { header: 'Company', key: 'company', width: 24 },
           { header: 'Title', key: 'title', width: 22 },
           { header: 'Status', key: 'status', width: 13 },
@@ -245,6 +321,7 @@ router.get('/:id/recipients/export', async (req, res, next) => {
         rows: recipients.map((recipient) => ({
           name: recipient.name,
           email: recipient.email,
+          appliedFor,
           company: recipient.company,
           title: recipient.job_title,
           status: recipient.status === 'not_started' ? 'not started' : recipient.status,
